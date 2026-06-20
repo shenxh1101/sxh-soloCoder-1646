@@ -71,16 +71,20 @@ export function formatDateTime(date?: Date | string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-export function getFutureDemand(): { day: string; demand: number }[] {
+export function getFutureDemand(): { day: string; date: string; demand: number }[] {
   const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
   const today = new Date();
   const result = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
+    const dateStr = d.toISOString().split('T')[0];
+    const seed = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    const demand = 40 + (seed % 80);
     result.push({
       day: days[d.getDay() === 0 ? 6 : d.getDay() - 1],
-      demand: Math.floor(Math.random() * 80) + 40,
+      date: dateStr,
+      demand,
     });
   }
   return result;
@@ -90,12 +94,37 @@ export function getFutureDemandTotal(): number {
   return getFutureDemand().reduce((sum, d) => sum + d.demand, 0);
 }
 
-export function getSuggestedPurchaseQty(currentStock: number, safetyThreshold: number, unit = ''): { qty: number; reason: string } {
+export function getSuggestedPurchaseQty(currentStock: number, safetyThreshold: number, unit = ''): { qty: number; reason: string; demandTotal: number } {
   const futureDemand = getFutureDemandTotal();
   const shortage = Math.max(0, safetyThreshold - currentStock);
-  const qty = Math.ceil((shortage + futureDemand * 0.3) * 1.2);
+  const buffer = Math.ceil(futureDemand * 0.3);
+  const qty = Math.ceil((shortage + buffer) * 1.2);
   const reason = shortage > 0
-    ? `库存缺口${shortage}${unit}，加7日需求缓冲约${Math.ceil(futureDemand * 0.3)}${unit}`
-    : `7日需求预测缓冲约${Math.ceil(futureDemand * 0.3)}${unit}`;
-  return { qty: Math.max(qty, 10), reason };
+    ? `库存缺口${shortage}${unit} + 7日需求缓冲${buffer}${unit}（7日总预测${futureDemand}${unit}×30%）`
+    : `7日需求缓冲${buffer}${unit}（7日总预测${futureDemand}${unit}×30%）`;
+  return { qty: Math.max(qty, 10), reason, demandTotal: futureDemand };
+}
+
+export function recommendSupplier(materialSupplierId: string, suppliers: { id: string; name: string; rating: number; leadTime: number; unitPrice: number; priceUnit: string }[]): { supplierId: string; reason: string; estimatedArrival: string } | null {
+  if (suppliers.length === 0) return null;
+  const original = suppliers.find(s => s.id === materialSupplierId);
+  const scored = suppliers.map(s => {
+    let score = s.rating * 20;
+    score += Math.max(0, 30 - s.leadTime * 5);
+    if (s.id === materialSupplierId) score += 15;
+    return { ...s, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0];
+  const today = new Date();
+  const arrival = new Date(today);
+  arrival.setDate(today.getDate() + best.leadTime);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const arrivalStr = `${arrival.getFullYear()}-${pad(arrival.getMonth() + 1)}-${pad(arrival.getDate())}`;
+  const reasonParts = [`${best.name}交期${best.leadTime}天`];
+  reasonParts.push(`评分${best.rating}`);
+  reasonParts.push(`单价${best.unitPrice}${best.priceUnit}`);
+  if (best.id === materialSupplierId) reasonParts.push('原供应商优先');
+  reasonParts.push('综合最优');
+  return { supplierId: best.id, reason: reasonParts.join('、'), estimatedArrival: arrivalStr };
 }

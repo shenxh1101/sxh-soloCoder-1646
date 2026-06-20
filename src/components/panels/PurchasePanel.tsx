@@ -1,15 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import {
-  ShoppingCart, AlertTriangle, Plus, CheckCircle, Clock, Package, X, Zap, TrendingUp
+  ShoppingCart, AlertTriangle, Plus, CheckCircle, Clock, Package, X, Zap, TrendingUp, Truck
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { GlowCard } from '@/components/common/GlowCard';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { cn } from '@/lib/utils';
-import { getSuggestedPurchaseQty, getFutureDemand } from '@/utils/helpers';
+import { getSuggestedPurchaseQty, getFutureDemand, recommendSupplier } from '@/utils/helpers';
 
 export const PurchasePanel: React.FC = () => {
   const materials = useAppStore(s => s.materials);
+  const suppliers = useAppStore(s => s.suppliers);
   const purchaseRequests = useAppStore(s => s.purchaseRequests);
   const createPurchaseRequest = useAppStore(s => s.createPurchaseRequest);
   const approvePurchase = useAppStore(s => s.approvePurchase);
@@ -157,7 +158,7 @@ export const PurchasePanel: React.FC = () => {
               <div key={m.id} className="p-2.5 rounded-md bg-neon-yellow/5 border border-neon-yellow/20">
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xs text-white font-medium">{m.name}</div>
-                  <div className="text-[10px] text-neon-orange font-mono">建议采购: {suggested.qty}{m.unit}</div>
+                  <div className="text-[10px] text-neon-orange font-mono">建议采购: {suggested.qty}{m.unit}<span className="text-white/40 ml-1">7日需求: {suggested.demandTotal}{m.unit}</span></div>
                 </div>
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="text-[10px] text-white/50 font-mono">
@@ -221,6 +222,20 @@ export const PurchasePanel: React.FC = () => {
                   <StatusBadge status="blue" text={'数量: ' + pr.quantity} className="text-[9px]" />
                 </div>
                 <div className="text-[10px] text-white/60 mb-1.5 line-clamp-2">{pr.reason}</div>
+                {pr.recommendedSupplierId && (
+                  <div className="mb-1.5 p-1.5 rounded-md bg-neon-blue/5 border border-neon-blue/15">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <Truck className="w-3 h-3 text-neon-blue" />
+                      <span className="text-[10px] text-neon-blue font-medium">推荐供应商: {suppliers.find(s => s.id === pr.recommendedSupplierId)?.name || pr.recommendedSupplierId}</span>
+                    </div>
+                    {pr.recommendedSupplierReason && (
+                      <div className="text-[10px] text-white/50 pl-4">推荐理由: {pr.recommendedSupplierReason}</div>
+                    )}
+                    {pr.estimatedArrival && (
+                      <div className="text-[10px] text-white/50 pl-4">预计到货: {pr.estimatedArrival}</div>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <div className="text-[10px] text-white/40 font-mono">{pr.createdAt}</div>
                   {canApprove && (

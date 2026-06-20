@@ -2,7 +2,7 @@ import React from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend
 } from 'recharts';
-import { X, Star, Phone, Building2, Award, BarChart3 } from 'lucide-react';
+import { X, Star, Phone, Building2, Award, BarChart3, ArrowUpDown } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { getQualityLabel, getQualityColor, getZoneLabel } from '@/utils/helpers';
 import { GlowCard } from '@/components/common/GlowCard';
@@ -14,6 +14,7 @@ export const MaterialDetail: React.FC = () => {
   const materials = useAppStore(s => s.materials);
   const suppliers = useAppStore(s => s.suppliers);
   const consumptionData = useAppStore(s => s.consumptionData);
+  const inventoryTransactions = useAppStore(s => s.inventoryTransactions);
 
   const material = materials.find(m => m.id === selectedMaterialId);
   const supplier = material ? suppliers.find(s => s.id === material.supplierId) : null;
@@ -164,6 +165,44 @@ export const MaterialDetail: React.FC = () => {
           </div>
         </GlowCard>
       )}
+
+      {(() => {
+        const txList = inventoryTransactions
+          .filter(tx => tx.materialId === material.id)
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const totalIn = txList.filter(t => t.type === 'stock_in').reduce((s, t) => s + t.quantity, 0);
+        const totalOut = txList.filter(t => t.type === 'stock_out').reduce((s, t) => s + t.quantity, 0);
+        return (
+          <GlowCard color="blue" className="p-3 space-y-2">
+            <div className="flex items-center gap-1 text-xs text-neon-blue font-semibold">
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>出入库流水</span>
+            </div>
+            {txList.length === 0 ? (
+              <div className="text-xs text-white/40">暂无出入库记录</div>
+            ) : (
+              <>
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {txList.map(tx => (
+                    <div key={tx.id} className="flex items-center justify-between text-xs">
+                      <span className={tx.type === 'stock_in' ? 'text-neon-green' : 'text-red-400'}>
+                        {tx.type === 'stock_in' ? `入库 +${tx.quantity}${tx.unit}` : `出库 -${tx.quantity}${tx.unit}`}
+                      </span>
+                      <span className="text-white/50 truncate mx-1">{tx.reason}</span>
+                      <span className="text-white/40 shrink-0">{tx.operatorName}</span>
+                      <span className="text-white/30 shrink-0 ml-1">{tx.timestamp.slice(0, 10)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 text-[10px] pt-1 border-t border-white/10">
+                  <span className="text-neon-green">累计入库: {totalIn}{material.unit}</span>
+                  <span className="text-red-400">累计出库: {totalOut}{material.unit}</span>
+                </div>
+              </>
+            )}
+          </GlowCard>
+        );
+      })()}
     </GlowCard>
   );
 };

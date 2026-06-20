@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { Material, Supplier, Inspection, DailyReport } from '../types';
+import type { Material, Supplier, Inspection, DailyReport, PurchaseRequest, InventoryTransaction, Rectification } from '../types';
 import { getQualityLabel, getZoneLabel } from './helpers';
 
 export interface ExportParams {
@@ -9,6 +9,9 @@ export interface ExportParams {
   suppliers: Supplier[];
   inspections: Inspection[];
   dailyReports: DailyReport[];
+  purchaseRequests: PurchaseRequest[];
+  inventoryTransactions: InventoryTransaction[];
+  rectifications: Rectification[];
 }
 
 function isDateInRange(dateStr: string, start: string, end: string): boolean {
@@ -17,7 +20,7 @@ function isDateInRange(dateStr: string, start: string, end: string): boolean {
 }
 
 export function exportMaterialReport(params: ExportParams): Blob {
-  const { startDate, endDate, materials, suppliers, inspections, dailyReports } = params;
+  const { startDate, endDate, materials, suppliers, inspections, dailyReports, purchaseRequests, inventoryTransactions, rectifications } = params;
 
   const filteredInspections = inspections.filter(i => isDateInRange(i.timestamp, startDate, endDate));
   const filteredReports = dailyReports.filter(r => isDateInRange(r.date, startDate, endDate));
@@ -94,6 +97,71 @@ export function exportMaterialReport(params: ExportParams): Blob {
 
   const ws4 = XLSX.utils.json_to_sheet(reportData);
   XLSX.utils.book_append_sheet(wb, ws4, '消耗统计');
+
+  const purchaseStatusMap: Record<string, string> = {
+    pending: '待审批',
+    approved: '已批准',
+    rejected: '已驳回',
+  };
+
+  const filteredPurchaseRequests = purchaseRequests.filter(pr => isDateInRange(pr.createdAt, startDate, endDate));
+  const purchaseRequestData = filteredPurchaseRequests.map(pr => ({
+    '申请编号': pr.id,
+    '物料编号': pr.materialId,
+    '申请数量': pr.quantity,
+    '申请原因': pr.reason,
+    '状态': purchaseStatusMap[pr.status] || pr.status,
+    '申请人ID': pr.requesterId,
+    '推荐供应商ID': pr.recommendedSupplierId || '-',
+    '推荐理由': pr.recommendedSupplierReason || '-',
+    '预计到货': pr.estimatedArrival || '-',
+    '创建时间': pr.createdAt,
+  }));
+
+  const ws5 = XLSX.utils.json_to_sheet(purchaseRequestData);
+  XLSX.utils.book_append_sheet(wb, ws5, '采购申请');
+
+  const transactionTypeMap: Record<string, string> = {
+    stock_in: '入库',
+    stock_out: '出库',
+  };
+
+  const filteredInventoryTransactions = inventoryTransactions.filter(t => isDateInRange(t.timestamp, startDate, endDate));
+  const inventoryTransactionData = filteredInventoryTransactions.map(t => ({
+    '流水编号': t.id,
+    '物料编号': t.materialId,
+    '物料名称': t.materialName,
+    '类型': transactionTypeMap[t.type] || t.type,
+    '数量': `${t.quantity} ${t.unit}`,
+    '原因': t.reason,
+    '关联单号': t.relatedId,
+    '操作人': t.operatorName,
+    '时间': t.timestamp,
+  }));
+
+  const ws6 = XLSX.utils.json_to_sheet(inventoryTransactionData);
+  XLSX.utils.book_append_sheet(wb, ws6, '出入库流水');
+
+  const rectificationStatusMap: Record<string, string> = {
+    pending_inspector: '待质检员审批',
+    pending_worker: '待施工员审批',
+    pending_manager: '待项目经理审批',
+    completed: '已完成',
+    rejected: '已驳回',
+  };
+
+  const filteredRectifications = rectifications.filter(r => isDateInRange(r.createdAt, startDate, endDate));
+  const rectificationData = filteredRectifications.map(r => ({
+    '整改编号': r.id,
+    '物料编号': r.materialId,
+    '描述': r.description,
+    '状态': rectificationStatusMap[r.status] || r.status,
+    '审批记录': r.approvals.map(a => `${a.role}:${a.userId} ${a.time} ${a.comment}`).join('; '),
+    '创建时间': r.createdAt,
+  }));
+
+  const ws7 = XLSX.utils.json_to_sheet(rectificationData);
+  XLSX.utils.book_append_sheet(wb, ws7, '整改审批');
 
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   return new Blob([wbout], { type: 'application/octet-stream' });
