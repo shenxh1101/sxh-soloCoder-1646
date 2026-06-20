@@ -44,7 +44,9 @@ export function exportMaterialReport(params: ExportParams): Blob {
       '类别': m.category,
       '批次号': m.batch,
       '进场日期': m.arrivalDate,
-      '当前库存': `${m.stock} ${m.unit}`,
+      '总库存': `${m.stock} ${m.unit}`,
+      '可用库存': `${m.stock - m.lockedStock} ${m.unit}`,
+      '锁定库存': `${m.lockedStock} ${m.unit}`,
       '安全库存': `${m.safetyThreshold} ${m.unit}`,
       '质检状态': getQualityLabel(m.qualityStatus),
       '合格率': passRate,
@@ -100,7 +102,8 @@ export function exportMaterialReport(params: ExportParams): Blob {
 
   const purchaseStatusMap: Record<string, string> = {
     pending: '待审批',
-    approved: '已批准',
+    delivering: '待到货',
+    delivered: '已到货',
     rejected: '已驳回',
   };
 
@@ -115,6 +118,10 @@ export function exportMaterialReport(params: ExportParams): Blob {
     '推荐供应商ID': pr.recommendedSupplierId || '-',
     '推荐理由': pr.recommendedSupplierReason || '-',
     '预计到货': pr.estimatedArrival || '-',
+    '确认供应商': pr.confirmedSupplierId || '-',
+    '实收数量': pr.actualQuantity ?? '-',
+    '到货日期': pr.deliveryDate || '-',
+    '验收结果': pr.deliveryInspectionResult === 'pass' ? '合格' : pr.deliveryInspectionResult === 'fail' ? '不合格' : pr.deliveryInspectionResult === 'pending' ? '待检' : '-',
     '创建时间': pr.createdAt,
   }));
 
@@ -131,6 +138,7 @@ export function exportMaterialReport(params: ExportParams): Blob {
     '流水编号': t.id,
     '物料编号': t.materialId,
     '物料名称': t.materialName,
+    '批次号': t.batchId || '-',
     '类型': transactionTypeMap[t.type] || t.type,
     '数量': `${t.quantity} ${t.unit}`,
     '原因': t.reason,

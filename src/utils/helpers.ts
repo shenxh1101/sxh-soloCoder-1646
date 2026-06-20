@@ -1,4 +1,4 @@
-import type { QualityStatus, UserRole } from '../types';
+import type { QualityStatus, UserRole, SupplierAlternative } from '../types';
 
 export function getRoleLabel(role: UserRole): string {
   const map: Record<UserRole, string> = {
@@ -105,26 +105,40 @@ export function getSuggestedPurchaseQty(currentStock: number, safetyThreshold: n
   return { qty: Math.max(qty, 10), reason, demandTotal: futureDemand };
 }
 
-export function recommendSupplier(materialSupplierId: string, suppliers: { id: string; name: string; rating: number; leadTime: number; unitPrice: number; priceUnit: string }[]): { supplierId: string; reason: string; estimatedArrival: string } | null {
-  if (suppliers.length === 0) return null;
-  const original = suppliers.find(s => s.id === materialSupplierId);
+export function recommendSuppliers(
+  materialSupplierId: string,
+  suppliers: { id: string; name: string; rating: number; leadTime: number; unitPrice: number; priceUnit: string }[],
+  inspectionFails: { materialId: string; supplierId: string; result: string }[]
+): SupplierAlternative[] {
+  if (suppliers.length === 0) return [];
+  const today = new Date();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+
   const scored = suppliers.map(s => {
     let score = s.rating * 20;
     score += Math.max(0, 30 - s.leadTime * 5);
+    const failCount = inspectionFails.filter(f => f.supplierId === s.id && f.result === 'fail').length;
+    score -= failCount * 5;
     if (s.id === materialSupplierId) score += 15;
-    return { ...s, score };
+
+    const arrival = new Date(today);
+    arrival.setDate(today.getDate() + s.leadTime);
+    const arrivalStr = `${arrival.getFullYear()}-${pad(arrival.getMonth() + 1)}-${pad(arrival.getDate())}`;
+
+    return {
+      supplierId: s.id,
+      supplierName: s.name,
+      score,
+      rating: s.rating,
+      leadTime: s.leadTime,
+      unitPrice: s.unitPrice,
+      priceUnit: s.priceUnit,
+      failCount,
+      estimatedArrival: arrivalStr,
+      isOriginal: s.id === materialSupplierId,
+    } as SupplierAlternative;
   });
+
   scored.sort((a, b) => b.score - a.score);
-  const best = scored[0];
-  const today = new Date();
-  const arrival = new Date(today);
-  arrival.setDate(today.getDate() + best.leadTime);
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  const arrivalStr = `${arrival.getFullYear()}-${pad(arrival.getMonth() + 1)}-${pad(arrival.getDate())}`;
-  const reasonParts = [`${best.name}交期${best.leadTime}天`];
-  reasonParts.push(`评分${best.rating}`);
-  reasonParts.push(`单价${best.unitPrice}${best.priceUnit}`);
-  if (best.id === materialSupplierId) reasonParts.push('原供应商优先');
-  reasonParts.push('综合最优');
-  return { supplierId: best.id, reason: reasonParts.join('、'), estimatedArrival: arrivalStr };
+  return scored;
 }

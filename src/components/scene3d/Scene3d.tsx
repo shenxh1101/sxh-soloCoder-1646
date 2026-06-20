@@ -114,9 +114,14 @@ function SceneContent() {
                   <div className="flex justify-between items-center" style={{ color: 'rgba(255,255,255,0.55)' }}>
                     <span>库存</span>
                     <span className="flex items-center gap-1">
-                      <span style={{ color: m.stock < m.safetyThreshold ? '#FFB020' : '#00C48C', fontWeight: 'bold' }}>
-                        {m.stock}{m.unit}
+                      <span style={{ color: (m.stock - m.lockedStock) < m.safetyThreshold ? '#FFB020' : '#00C48C', fontWeight: 'bold' }}>
+                        {m.stock - m.lockedStock}{m.unit}
                       </span>
+                      {m.lockedStock > 0 && (
+                        <span style={{ color: '#FF4757', fontSize: '9px' }}>
+                          🔒{m.lockedStock}
+                        </span>
+                      )}
                       <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '9px' }}>
                         /{m.safetyThreshold}
                       </span>
@@ -129,7 +134,7 @@ function SceneContent() {
                     </span>
                   </div>
                 </div>
-                {m.stock < m.safetyThreshold && (
+                {(m.stock - m.lockedStock) < m.safetyThreshold && (
                   <div
                     className="mt-1 px-1.5 py-0.5 rounded text-[9px] text-center font-medium"
                     style={{ background: '#FFB02015', color: '#FFB020', border: '1px solid #FFB02030' }}

@@ -1,17 +1,19 @@
 import { create } from 'zustand';
 import type {
   User, UserRole, Material, Supplier, ConsumptionHourly, Inspection,
-  Rectification, PurchaseRequest, CraneTask, DailyReport, OperationLog, ActivePanelType, InventoryTransaction
+  Rectification, PurchaseRequest, CraneTask, DailyReport, OperationLog, ActivePanelType, InventoryTransaction, SupplierAlternative
 } from '../types';
 import {
   mockUsers, mockMaterials, mockSuppliers, generateConsumptionData,
   mockInspections, mockRectifications, mockPurchaseRequests, mockCraneTasks,
   mockDailyReports, mockOperationLogs, mockInventoryTransactions
 } from '../data/mockData';
-import { generateId, formatDateTime, getSuggestedPurchaseQty, recommendSupplier } from '../utils/helpers';
+import { generateId, formatDateTime, getSuggestedPurchaseQty, recommendSuppliers } from '../utils/helpers';
 import { exportMaterialReport, downloadExcel } from '../utils/excelExport';
 
-const STORAGE_KEY = 'construction_material_platform_v2';
+const STORAGE_KEY_V3 = 'construction_material_platform_v3';
+const STORAGE_KEY_V2 = 'construction_material_platform_v2';
+const STORAGE_KEY_V1 = 'construction_material_platform_v1';
 
 interface PersistData {
   materials: Material[];
@@ -23,11 +25,60 @@ interface PersistData {
   inventoryTransactions: InventoryTransaction[];
 }
 
+function migratePurchaseStatus(status: string): PurchaseRequest['status'] {
+  if (status === 'approved') return 'delivered';
+  if (status === 'pending' || status === 'delivering' || status === 'delivered' || status === 'rejected') return status;
+  return 'pending';
+}
+
+function ensureMaterialDefaults(m: any): Material {
+  return {
+    ...m,
+    lockedStock: m.lockedStock ?? 0,
+  };
+}
+
+function ensureTransactionDefaults(tx: any): InventoryTransaction {
+  return {
+    ...tx,
+    batchId: tx.batchId || '',
+  };
+}
+
+function ensurePurchaseDefaults(pr: any): PurchaseRequest {
+  return {
+    ...pr,
+    status: migratePurchaseStatus(pr.status),
+    supplierAlternatives: pr.supplierAlternatives || [],
+    actualQuantity: pr.actualQuantity,
+    deliveryDate: pr.deliveryDate,
+    deliveryInspectionResult: pr.deliveryInspectionResult,
+    confirmedSupplierId: pr.confirmedSupplierId,
+  };
+}
+
 function loadFromStorage(): Partial<PersistData> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY_V3);
+    if (!raw) {
+      raw = localStorage.getItem(STORAGE_KEY_V2);
+      if (!raw) {
+        raw = localStorage.getItem(STORAGE_KEY_V1);
+      }
+    }
     if (!raw) return {};
-    return JSON.parse(raw) as PersistData;
+
+    const parsed = JSON.parse(raw);
+    if (parsed.materials) {
+      parsed.materials = parsed.materials.map(ensureMaterialDefaults);
+    }
+    if (parsed.inventoryTransactions) {
+      parsed.inventoryTransactions = parsed.inventoryTransactions.map(ensureTransactionDefaults);
+    }
+    if (parsed.purchaseRequests) {
+      parsed.purchaseRequests = parsed.purchaseRequests.map(ensurePurchaseDefaults);
+    }
+    return parsed as PersistData;
   } catch (e) {
     console.warn('Failed to load persisted data:', e);
     return {};
@@ -36,7 +87,7 @@ function loadFromStorage(): Partial<PersistData> {
 
 function saveToStorage(data: PersistData) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(data));
   } catch (e) {
     console.warn('Failed to persist data:', e);
   }
@@ -81,7 +132,8 @@ interface AppState {
   rejectRectification: (id: string, role: UserRole, comment: string) => void;
 
   createPurchaseRequest: (materialId: string, quantity: number, reason: string, auto?: boolean) => void;
-  approvePurchase: (id: string) => void;
+  approvePurchase: (id: string, selectedSupplierId?: string) => void;
+  confirmDelivery: (id: string, actualQuantity: number, deliveryDate: string, inspectionResult: 'pass' | 'fail' | 'pending') => void;
 
   assignCraneTask: (task: Omit<CraneTask, 'id' | 'createdAt'>) => void;
   completeCraneTask: (taskId: string) => void;
@@ -198,6 +250,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().addInventoryTransaction({
         materialId,
         materialName: material.name,
+        batchId: material.batch,
         type: 'stock_out',
         quantity: deductQty,
         unit: material.unit,
@@ -209,7 +262,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       set(state => ({
         materials: state.materials.map(m =>
-          m.id === materialId ? { ...m, stock: Math.max(0, m.stock - deductQty) } : m
+          m.id === materialId ? { ...m, stock: Math.max(0, m.stock - deductQty), lockedStock: m.lockedStock + deductQty } : m
         ),
       }));
 
@@ -278,12 +331,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!user) return;
 
     const existingAuto = get().purchaseRequests.find(
-      p => p.materialId === materialId && p.status === 'pending' && p.isAutoGenerated
+      p => p.materialId === materialId && (p.status === 'pending' || p.status === 'delivering') && p.isAutoGenerated
     );
     if (auto && existingAuto) return;
 
     const material = get().materials.find(m => m.id === materialId);
-    const rec = recommendSupplier(material?.supplierId || '', get().suppliers);
+    const suppliers = get().suppliers;
+    const inspections = get().inspections;
+    const materials = get().materials;
+
+    const inspectionFails = inspections.map(i => {
+      const mat = materials.find(m => m.id === i.materialId);
+      return { materialId: i.materialId, supplierId: mat?.supplierId || '', result: i.result };
+    });
+
+    const alternatives = recommendSuppliers(material?.supplierId || '', suppliers, inspectionFails);
+    const best = alternatives[0];
+
+    const recReason = best
+      ? [`${best.supplierName}交期${best.leadTime}天`, `评分${best.rating}`, `单价${best.unitPrice}${best.priceUnit}`, best.failCount > 0 ? `历史不合格${best.failCount}次` : null, `综合评分${best.score}`].filter(Boolean).join('、')
+      : undefined;
 
     const pr: PurchaseRequest = {
       id: generateId('p'),
@@ -294,24 +361,62 @@ export const useAppStore = create<AppState>((set, get) => ({
       requesterId: user.id,
       approvals: user.role === 'inspector' ? [{ role: 'inspector', userId: user.id, time: formatDateTime() }] : [],
       createdAt: formatDateTime(),
-      recommendedSupplierId: rec?.supplierId,
-      recommendedSupplierReason: rec?.reason,
-      estimatedArrival: rec?.estimatedArrival,
+      recommendedSupplierId: best?.supplierId,
+      recommendedSupplierReason: recReason,
+      estimatedArrival: best?.estimatedArrival,
       isAutoGenerated: auto,
+      supplierAlternatives: alternatives,
     };
 
     set(state => ({ purchaseRequests: [...state.purchaseRequests, pr] }));
-    get().addOperationLog(auto ? '自动采购申请' : '采购申请', `${auto ? '系统自动创建' : '创建'}采购申请${pr.id}：物料${materialId}，数量${quantity}${rec ? `，推荐${get().suppliers.find(s=>s.id===rec.supplierId)?.name||''}` : ''}`);
+    get().addOperationLog(auto ? '自动采购申请' : '采购申请', `${auto ? '系统自动创建' : '创建'}采购申请${pr.id}：物料${materialId}，数量${quantity}${best ? `，推荐${best.supplierName}` : ''}`);
     get().setNotification(true, auto ? '库存预警，已自动生成采购申请' : '采购申请已创建并提交审批');
     get()._persist();
   },
 
-  approvePurchase: (id) => {
+  approvePurchase: (id, selectedSupplierId) => {
     const user = get().currentUser;
     if (!user) return;
 
     const pr = get().purchaseRequests.find(p => p.id === id);
     if (!pr) return;
+
+    const confirmedSupplierId = selectedSupplierId || pr.recommendedSupplierId;
+    let estimatedArrival = pr.estimatedArrival;
+    if (selectedSupplierId && selectedSupplierId !== pr.recommendedSupplierId) {
+      const supplier = get().suppliers.find(s => s.id === selectedSupplierId);
+      if (supplier) {
+        const today = new Date();
+        const arrival = new Date(today);
+        arrival.setDate(today.getDate() + supplier.leadTime);
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        estimatedArrival = `${arrival.getFullYear()}-${pad(arrival.getMonth() + 1)}-${pad(arrival.getDate())}`;
+      }
+    }
+
+    set(state => ({
+      purchaseRequests: state.purchaseRequests.map(p =>
+        p.id === id ? {
+          ...p,
+          status: 'delivering' as const,
+          approvals: [...p.approvals, { role: user.role, userId: user.id, time: formatDateTime() }],
+          confirmedSupplierId,
+          estimatedArrival,
+        } : p
+      ),
+    }));
+
+    get().addOperationLog('采购审批', `审批采购申请${id}通过，进入待到货状态${confirmedSupplierId && confirmedSupplierId !== pr.recommendedSupplierId ? `，改选供应商${confirmedSupplierId}` : ''}`);
+    get().setNotification(true, '采购申请已批准，等待到货确认');
+    get()._persist();
+  },
+
+  confirmDelivery: (id, actualQuantity, deliveryDate, inspectionResult) => {
+    const user = get().currentUser;
+    if (!user) return;
+
+    const pr = get().purchaseRequests.find(p => p.id === id);
+    if (!pr || pr.status !== 'delivering') return;
 
     const material = get().materials.find(m => m.id === pr.materialId);
 
@@ -319,12 +424,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       purchaseRequests: state.purchaseRequests.map(p =>
         p.id === id ? {
           ...p,
-          status: 'approved',
-          approvals: [...p.approvals, { role: user.role, userId: user.id, time: formatDateTime() }],
+          status: 'delivered' as const,
+          actualQuantity,
+          deliveryDate,
+          deliveryInspectionResult: inspectionResult,
         } : p
       ),
       materials: state.materials.map(m =>
-        m.id === pr.materialId ? { ...m, stock: m.stock + pr.quantity } : m
+        m.id === pr.materialId ? { ...m, stock: m.stock + actualQuantity } : m
       ),
     }));
 
@@ -332,19 +439,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().addInventoryTransaction({
         materialId: pr.materialId,
         materialName: material.name,
+        batchId: material.batch,
         type: 'stock_in',
-        quantity: pr.quantity,
+        quantity: actualQuantity,
         unit: material.unit,
-        reason: `采购批准入库（申请${pr.id}）`,
+        reason: `到货入库（申请${pr.id}，实收${actualQuantity}${material.unit}，验收${inspectionResult === 'pass' ? '合格' : inspectionResult === 'fail' ? '不合格' : '待检'}）`,
         relatedId: pr.id,
         operatorId: user.id,
         operatorName: user.name,
         timestamp: formatDateTime(),
       });
+
+      if (inspectionResult === 'fail') {
+        const lockQty = Math.ceil(actualQuantity * 0.5);
+        set(state => ({
+          materials: state.materials.map(m =>
+            m.id === pr.materialId ? { ...m, lockedStock: m.lockedStock + lockQty } : m
+          ),
+        }));
+      }
     }
 
-    get().addOperationLog('采购审批', `审批采购申请${id}通过，入库${pr.quantity}${material?.unit || ''}`);
-    get().setNotification(true, '采购申请已批准，物料已入库');
+    get().addOperationLog('到货确认', `确认采购申请${id}到货，实收${actualQuantity}${material?.unit || ''}，验收${inspectionResult === 'pass' ? '合格' : inspectionResult === 'fail' ? '不合格' : '待检'}`);
+    get().setNotification(true, `到货确认完成，${actualQuantity}${material?.unit || ''}已入库`);
     get()._persist();
   },
 
@@ -362,7 +479,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const user = get().currentUser;
     const task = get().craneTasks.find(t => t.id === taskId);
     const material = task ? get().materials.find(m => m.id === task.materialId) : null;
-    const consumeQty = material ? Math.min(material.stock, Math.ceil(Math.random() * 5) + 1) : 0;
+    const consumeQty = material ? Math.min(material.stock - material.lockedStock, Math.ceil(Math.random() * 5) + 1) : 0;
 
     set(state => ({
       craneTasks: state.craneTasks.map(t =>
@@ -377,6 +494,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().addInventoryTransaction({
         materialId: task.materialId,
         materialName: task.materialName,
+        batchId: material.batch,
         type: 'stock_out',
         quantity: consumeQty,
         unit: material.unit,
@@ -464,12 +582,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = get();
     if (!state.currentUser) return;
     state.materials.forEach(m => {
-      if (m.stock < m.safetyThreshold) {
+      const availableStock = m.stock - m.lockedStock;
+      if (availableStock < m.safetyThreshold) {
         const existingPending = state.purchaseRequests.find(
-          p => p.materialId === m.id && p.status === 'pending' && p.isAutoGenerated
+          p => p.materialId === m.id && (p.status === 'pending' || p.status === 'delivering') && p.isAutoGenerated
         );
         if (existingPending) return;
-        const suggested = getSuggestedPurchaseQty(m.stock, m.safetyThreshold, m.unit);
+        const suggested = getSuggestedPurchaseQty(availableStock, m.safetyThreshold, m.unit);
         get().createPurchaseRequest(
           m.id,
           suggested.qty,

@@ -1,12 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend
 } from 'recharts';
-import { X, Star, Phone, Building2, Award, BarChart3, ArrowUpDown } from 'lucide-react';
+import { X, Star, Phone, Building2, Award, BarChart3, ArrowUpDown, ChevronDown, ChevronRight, Lock, Package } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { getQualityLabel, getQualityColor, getZoneLabel } from '@/utils/helpers';
 import { GlowCard } from '@/components/common/GlowCard';
 import { StatusBadge } from '@/components/common/StatusBadge';
+
+function getLifecycleLabel(tx: { type: string; reason: string }, isFirstStockIn: boolean): string {
+  if (tx.type === 'stock_in' && isFirstStockIn) return '进场';
+  if (tx.type === 'stock_out' && tx.reason.includes('质检')) return '质检';
+  if (tx.type === 'stock_out' && tx.reason.includes('吊运')) return '吊运消耗';
+  if (tx.type === 'stock_in') return '入库';
+  return '出库';
+}
 
 export const MaterialDetail: React.FC = () => {
   const selectedMaterialId = useAppStore(s => s.selectedMaterialId);
@@ -15,6 +23,8 @@ export const MaterialDetail: React.FC = () => {
   const suppliers = useAppStore(s => s.suppliers);
   const consumptionData = useAppStore(s => s.consumptionData);
   const inventoryTransactions = useAppStore(s => s.inventoryTransactions);
+
+  const [expandedBatches, setExpandedBatches] = useState<Record<string, boolean>>({});
 
   const material = materials.find(m => m.id === selectedMaterialId);
   const supplier = material ? suppliers.find(s => s.id === material.supplierId) : null;
@@ -29,6 +39,9 @@ export const MaterialDetail: React.FC = () => {
     );
   }
 
+  const availableStock = material.stock - material.lockedStock;
+  const availableColor = availableStock >= material.safetyThreshold ? 'text-neon-green' : availableStock > 0 ? 'text-yellow-400' : 'text-red-400';
+
   const consumptionChart = consumptionData
     .filter(c => c.materialId === material.id)
     .map(c => ({ hour: `${c.hour}:00`, amount: c.amount }));
@@ -37,6 +50,31 @@ export const MaterialDetail: React.FC = () => {
     { name: '当前库存', value: material.stock },
     { name: '安全阈值', value: material.safetyThreshold },
   ];
+
+  const txList = inventoryTransactions
+    .filter(tx => tx.materialId === material.id);
+
+  const batchMap = new Map<string, typeof txList>();
+  txList.forEach(tx => {
+    const key = tx.batchId || 'default';
+    if (!batchMap.has(key)) batchMap.set(key, []);
+    batchMap.get(key)!.push(tx);
+  });
+
+  const batchEntries = Array.from(batchMap.entries()).map(([batchId, transactions]) => {
+    const sorted = [...transactions].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const totalIn = sorted.filter(t => t.type === 'stock_in').reduce((s, t) => s + t.quantity, 0);
+    const totalOut = sorted.filter(t => t.type === 'stock_out').reduce((s, t) => s + t.quantity, 0);
+    const remaining = totalIn - totalOut;
+    return { batchId, transactions: sorted, totalIn, totalOut, remaining };
+  });
+
+  const toggleBatch = (batchId: string) => {
+    setExpandedBatches(prev => ({ ...prev, [batchId]: !prev[batchId] }));
+  };
+
+  const totalIn = txList.filter(t => t.type === 'stock_in').reduce((s, t) => s + t.quantity, 0);
+  const totalOut = txList.filter(t => t.type === 'stock_out').reduce((s, t) => s + t.quantity, 0);
 
   return (
     <GlowCard className="w-80 h-full flex flex-col gap-3 overflow-y-auto">
@@ -104,8 +142,22 @@ export const MaterialDetail: React.FC = () => {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="text-xs text-white/60 font-mono">
-          当前: {material.stock}{material.unit} | 安全线: {material.safetyThreshold}{material.unit}
+        <div className="space-y-1">
+          <div className={`text-xs font-mono ${availableColor}`}>
+            可用库存: {availableStock} {material.unit}
+          </div>
+          {material.lockedStock > 0 && (
+            <div className="text-xs font-mono text-orange-400 flex items-center gap-1">
+              <Lock className="w-3 h-3" />
+              锁定库存: {material.lockedStock} {material.unit}
+            </div>
+          )}
+          <div className="text-xs font-mono text-white/60">
+            总库存: {material.stock} {material.unit}
+          </div>
+          <div className="text-xs text-white/40 font-mono">
+            安全线: {material.safetyThreshold}{material.unit}
+          </div>
         </div>
       </div>
 
@@ -166,43 +218,80 @@ export const MaterialDetail: React.FC = () => {
         </GlowCard>
       )}
 
-      {(() => {
-        const txList = inventoryTransactions
-          .filter(tx => tx.materialId === material.id)
-          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        const totalIn = txList.filter(t => t.type === 'stock_in').reduce((s, t) => s + t.quantity, 0);
-        const totalOut = txList.filter(t => t.type === 'stock_out').reduce((s, t) => s + t.quantity, 0);
-        return (
-          <GlowCard color="blue" className="p-3 space-y-2">
-            <div className="flex items-center gap-1 text-xs text-neon-blue font-semibold">
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              <span>出入库流水</span>
+      <GlowCard color="blue" className="p-3 space-y-2">
+        <div className="flex items-center gap-1 text-xs text-neon-blue font-semibold">
+          <ArrowUpDown className="w-3.5 h-3.5" />
+          <span>出入库流水</span>
+        </div>
+        {txList.length === 0 ? (
+          <div className="text-xs text-white/40">暂无出入库记录</div>
+        ) : (
+          <>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {batchEntries.map(({ batchId, transactions, totalIn: batchIn, totalOut: batchOut, remaining }) => {
+                const isExpanded = expandedBatches[batchId] !== false;
+                const firstStockInIdx = transactions.findIndex(t => t.type === 'stock_in');
+                return (
+                  <div key={batchId} className="rounded border border-white/10 overflow-hidden">
+                    <button
+                      onClick={() => toggleBatch(batchId)}
+                      className="w-full flex items-center justify-between px-2 py-1.5 bg-white/5 hover:bg-white/10 transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5 text-xs">
+                        {isExpanded ? <ChevronDown className="w-3 h-3 text-neon-blue" /> : <ChevronRight className="w-3 h-3 text-neon-blue" />}
+                        <Package className="w-3 h-3 text-neon-yellow" />
+                        <span className="text-white/80 font-mono">{batchId}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <span className="text-neon-green">+{batchIn}</span>
+                        <span className="text-red-400">-{batchOut}</span>
+                        <span className={remaining > 0 ? 'text-white/70' : 'text-red-400'}>余{remaining}</span>
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="px-2 py-1 space-y-1">
+                        {transactions.map((tx, idx) => {
+                          const isFirstStockIn = idx === firstStockInIdx;
+                          const label = getLifecycleLabel(tx, isFirstStockIn);
+                          const isStockIn = tx.type === 'stock_in';
+                          return (
+                            <div key={tx.id} className="flex items-start gap-1.5 text-xs">
+                              <div className="flex flex-col items-center mt-0.5">
+                                <div className={`w-2 h-2 rounded-full ${isStockIn ? 'bg-neon-green' : 'bg-red-400'}`} />
+                                {idx < transactions.length - 1 && <div className="w-px h-4 bg-white/10" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <span className={`font-medium ${isStockIn ? 'text-neon-green' : 'text-red-400'}`}>
+                                    {label} {isStockIn ? `+${tx.quantity}` : `-${tx.quantity}`}{tx.unit}
+                                  </span>
+                                  <span className="text-white/30 shrink-0 ml-1">{tx.timestamp.slice(5, 16)}</span>
+                                </div>
+                                <div className="text-white/50 truncate">{tx.reason}</div>
+                                <div className="text-white/30">{tx.operatorName}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[10px]">
+                          <span className="text-white/50">剩余</span>
+                          <span className={remaining > 0 ? 'text-neon-green font-mono' : 'text-red-400 font-mono'}>
+                            {remaining} {material.unit}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            {txList.length === 0 ? (
-              <div className="text-xs text-white/40">暂无出入库记录</div>
-            ) : (
-              <>
-                <div className="max-h-40 overflow-y-auto space-y-1">
-                  {txList.map(tx => (
-                    <div key={tx.id} className="flex items-center justify-between text-xs">
-                      <span className={tx.type === 'stock_in' ? 'text-neon-green' : 'text-red-400'}>
-                        {tx.type === 'stock_in' ? `入库 +${tx.quantity}${tx.unit}` : `出库 -${tx.quantity}${tx.unit}`}
-                      </span>
-                      <span className="text-white/50 truncate mx-1">{tx.reason}</span>
-                      <span className="text-white/40 shrink-0">{tx.operatorName}</span>
-                      <span className="text-white/30 shrink-0 ml-1">{tx.timestamp.slice(0, 10)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-3 text-[10px] pt-1 border-t border-white/10">
-                  <span className="text-neon-green">累计入库: {totalIn}{material.unit}</span>
-                  <span className="text-red-400">累计出库: {totalOut}{material.unit}</span>
-                </div>
-              </>
-            )}
-          </GlowCard>
-        );
-      })()}
+            <div className="flex items-center gap-3 text-[10px] pt-1 border-t border-white/10">
+              <span className="text-neon-green">累计入库: {totalIn}{material.unit}</span>
+              <span className="text-red-400">累计出库: {totalOut}{material.unit}</span>
+            </div>
+          </>
+        )}
+      </GlowCard>
     </GlowCard>
   );
 };
