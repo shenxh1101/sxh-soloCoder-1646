@@ -20,56 +20,80 @@ export const mockMaterials: Material[] = [
     arrivalDate: '2026-06-15', stock: 285, safetyThreshold: 100,
     qualityStatus: 'green', supplierId: 's1',
     position: { x: -12, y: 0, z: -8 }, zone: 'material_yard',
-    isLocked: false, unit: '吨', lockedStock: 0
+    isLocked: false, unit: '吨', lockedStock: 0,
+    batches: [
+      { id: 'b101', batchNo: 'G20260615001', arrivalDate: '2026-06-15', quantity: 285, lockedQuantity: 0, qualityStatus: 'green', supplierId: 's1', inspectionStatus: 'inspected' },
+    ],
   },
   {
     id: 'm2', name: 'P.O42.5水泥', category: '水泥', batch: 'C20260618002',
     arrivalDate: '2026-06-18', stock: 520, safetyThreshold: 200,
     qualityStatus: 'green', supplierId: 's2',
     position: { x: -6, y: 0, z: -8 }, zone: 'material_yard',
-    isLocked: false, unit: '袋', lockedStock: 0
+    isLocked: false, unit: '袋', lockedStock: 0,
+    batches: [
+      { id: 'b201', batchNo: 'C20260618002', arrivalDate: '2026-06-18', quantity: 520, lockedQuantity: 0, qualityStatus: 'green', supplierId: 's2', inspectionStatus: 'inspected' },
+    ],
   },
   {
     id: 'm3', name: '河沙(中粗)', category: '砂石', batch: 'S20260619003',
     arrivalDate: '2026-06-19', stock: 85, safetyThreshold: 150,
     qualityStatus: 'yellow', supplierId: 's3',
     position: { x: 0, y: 0, z: -8 }, zone: 'material_yard',
-    isLocked: false, unit: '立方米', lockedStock: 0
+    isLocked: false, unit: '立方米', lockedStock: 0,
+    batches: [
+      { id: 'b301', batchNo: 'S20260619003', arrivalDate: '2026-06-19', quantity: 85, lockedQuantity: 0, qualityStatus: 'yellow', supplierId: 's3', inspectionStatus: 'inspected' },
+    ],
   },
   {
     id: 'm4', name: '5-25mm碎石', category: '砂石', batch: 'A20260617004',
     arrivalDate: '2026-06-17', stock: 180, safetyThreshold: 100,
     qualityStatus: 'green', supplierId: 's3',
     position: { x: 6, y: 0, z: -8 }, zone: 'material_yard',
-    isLocked: false, unit: '立方米', lockedStock: 0
+    isLocked: false, unit: '立方米', lockedStock: 0,
+    batches: [
+      { id: 'b401', batchNo: 'A20260617004', arrivalDate: '2026-06-17', quantity: 180, lockedQuantity: 0, qualityStatus: 'green', supplierId: 's3', inspectionStatus: 'inspected' },
+    ],
   },
   {
     id: 'm5', name: '松木模板', category: '木材', batch: 'W20260610005',
     arrivalDate: '2026-06-10', stock: 42, safetyThreshold: 80,
     qualityStatus: 'red', supplierId: 's4',
     position: { x: -9, y: 0, z: -2 }, zone: 'processing_shed',
-    isLocked: true, unit: '张', lockedStock: 42
+    isLocked: true, unit: '张', lockedStock: 42,
+    batches: [
+      { id: 'b501', batchNo: 'W20260610005', arrivalDate: '2026-06-10', quantity: 42, lockedQuantity: 42, qualityStatus: 'red', supplierId: 's4', inspectionStatus: 'inspected' },
+    ],
   },
   {
     id: 'm6', name: '100x100方木', category: '木材', batch: 'W20260612006',
     arrivalDate: '2026-06-12', stock: 320, safetyThreshold: 150,
     qualityStatus: 'green', supplierId: 's4',
     position: { x: 9, y: 0, z: -2 }, zone: 'processing_shed',
-    isLocked: false, unit: '根', lockedStock: 0
+    isLocked: false, unit: '根', lockedStock: 0,
+    batches: [
+      { id: 'b601', batchNo: 'W20260612006', arrivalDate: '2026-06-12', quantity: 320, lockedQuantity: 0, qualityStatus: 'green', supplierId: 's4', inspectionStatus: 'inspected' },
+    ],
   },
   {
     id: 'm7', name: 'HPB300圆钢', category: '钢材', batch: 'G20260616007',
     arrivalDate: '2026-06-16', stock: 156, safetyThreshold: 80,
     qualityStatus: 'green', supplierId: 's1',
     position: { x: 12, y: 0, z: -8 }, zone: 'material_yard',
-    isLocked: false, unit: '吨', lockedStock: 0
+    isLocked: false, unit: '吨', lockedStock: 0,
+    batches: [
+      { id: 'b701', batchNo: 'G20260616007', arrivalDate: '2026-06-16', quantity: 156, lockedQuantity: 0, qualityStatus: 'green', supplierId: 's1', inspectionStatus: 'inspected' },
+    ],
   },
   {
     id: 'm8', name: '粉煤灰砖', category: '砌体', batch: 'B20260620008',
     arrivalDate: '2026-06-20', stock: 12000, safetyThreshold: 5000,
     qualityStatus: 'yellow', supplierId: 's2',
     position: { x: -3, y: 0, z: -2 }, zone: 'processing_shed',
-    isLocked: false, unit: '块', lockedStock: 0
+    isLocked: false, unit: '块', lockedStock: 0,
+    batches: [
+      { id: 'b801', batchNo: 'B20260620008', arrivalDate: '2026-06-20', quantity: 12000, lockedQuantity: 0, qualityStatus: 'yellow', supplierId: 's2', inspectionStatus: 'inspected' },
+    ],
   },
 ];
 
@@ -88,14 +112,14 @@ export function generateConsumptionData(): ConsumptionHourly[] {
 }
 
 export const mockInspections: Inspection[] = [
-  { id: 'i1', materialId: 'm5', inspectorId: 'u2', result: 'fail', remark: '含水率超标，存在腐烂现象', timestamp: '2026-06-19 14:30:00' },
-  { id: 'i2', materialId: 'm1', inspectorId: 'u2', result: 'pass', remark: '检测合格', timestamp: '2026-06-18 09:15:00' },
-  { id: 'i3', materialId: 'm3', inspectorId: 'u2', result: 'pass', remark: '含泥量略高，可使用', timestamp: '2026-06-19 10:20:00' },
+  { id: 'i1', materialId: 'm5', batchId: 'b501', inspectorId: 'u2', result: 'fail', remark: '含水率超标，存在腐烂现象', timestamp: '2026-06-19 14:30:00' },
+  { id: 'i2', materialId: 'm1', batchId: 'b101', inspectorId: 'u2', result: 'pass', remark: '检测合格', timestamp: '2026-06-18 09:15:00' },
+  { id: 'i3', materialId: 'm3', batchId: 'b301', inspectorId: 'u2', result: 'pass', remark: '含泥量略高，可使用', timestamp: '2026-06-19 10:20:00' },
 ];
 
 export const mockRectifications: Rectification[] = [
   {
-    id: 'r1', materialId: 'm5', description: '松木模板批次W20260610005检测不合格，含水率超标15%，部分存在腐烂。需退回供应商并更换合格批次。',
+    id: 'r1', materialId: 'm5', batchId: 'b501', description: '松木模板批次W20260610005检测不合格，含水率超标15%，部分存在腐烂。需退回供应商并更换合格批次。',
     status: 'pending_worker',
     approvals: [
       { role: 'inspector', userId: 'u2', time: '2026-06-19 14:35:00', comment: '检测确认不合格，需立即处理' }
@@ -103,7 +127,7 @@ export const mockRectifications: Rectification[] = [
     createdAt: '2026-06-19 14:32:00'
   },
   {
-    id: 'r2', materialId: 'm3', description: '河沙批次S20260619003库存量已低于安全阈值，需尽快组织采购。',
+    id: 'r2', materialId: 'm3', batchId: 'b301', description: '河沙批次S20260619003库存量已低于安全阈值，需尽快组织采购。',
     status: 'pending_inspector',
     approvals: [],
     createdAt: '2026-06-20 08:00:00'

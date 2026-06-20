@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend
 } from 'recharts';
-import { X, Star, Phone, Building2, Award, BarChart3, ArrowUpDown, ChevronDown, ChevronRight, Lock, Package } from 'lucide-react';
+import { X, Star, Phone, Building2, Award, BarChart3, ArrowUpDown, ChevronDown, ChevronRight, Lock, Package, Calendar, Truck } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { getQualityLabel, getQualityColor, getZoneLabel } from '@/utils/helpers';
 import { GlowCard } from '@/components/common/GlowCard';
 import { StatusBadge } from '@/components/common/StatusBadge';
+import type { MaterialBatch, InventoryTransaction } from '@/types';
 
 function getLifecycleLabel(tx: { type: string; reason: string }, isFirstStockIn: boolean): string {
   if (tx.type === 'stock_in' && isFirstStockIn) return '进场';
@@ -14,6 +15,22 @@ function getLifecycleLabel(tx: { type: string; reason: string }, isFirstStockIn:
   if (tx.type === 'stock_out' && tx.reason.includes('吊运')) return '吊运消耗';
   if (tx.type === 'stock_in') return '入库';
   return '出库';
+}
+
+function getInspectionLabel(status: 'pending' | 'inspected'): string {
+  return status === 'pending' ? '待检' : '已检验';
+}
+
+function getInspectionColor(status: 'pending' | 'inspected'): string {
+  return status === 'pending' ? '#FFB020' : '#00C48C';
+}
+
+interface BatchTransactions {
+  batch: MaterialBatch;
+  transactions: InventoryTransaction[];
+  totalIn: number;
+  totalOut: number;
+  remaining: number;
 }
 
 export const MaterialDetail: React.FC = () => {
@@ -47,27 +64,31 @@ export const MaterialDetail: React.FC = () => {
     .map(c => ({ hour: `${c.hour}:00`, amount: c.amount }));
 
   const stockData = [
-    { name: '当前库存', value: material.stock },
-    { name: '安全阈值', value: material.safetyThreshold },
+    { name: '可用库存', value: availableStock, color: '#00C48C' },
+    { name: '锁定库存', value: material.lockedStock, color: '#FF4757' },
+    { name: '安全阈值', value: material.safetyThreshold, color: '#FFB020' },
   ];
 
   const txList = inventoryTransactions
     .filter(tx => tx.materialId === material.id);
 
-  const batchMap = new Map<string, typeof txList>();
-  txList.forEach(tx => {
-    const key = tx.batchId || 'default';
-    if (!batchMap.has(key)) batchMap.set(key, []);
-    batchMap.get(key)!.push(tx);
-  });
+  const sortedBatches = useMemo(() => {
+    return [...material.batches].sort((a, b) =>
+      new Date(b.arrivalDate).getTime() - new Date(a.arrivalDate).getTime()
+    );
+  }, [material.batches]);
 
-  const batchEntries = Array.from(batchMap.entries()).map(([batchId, transactions]) => {
-    const sorted = [...transactions].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-    const totalIn = sorted.filter(t => t.type === 'stock_in').reduce((s, t) => s + t.quantity, 0);
-    const totalOut = sorted.filter(t => t.type === 'stock_out').reduce((s, t) => s + t.quantity, 0);
-    const remaining = totalIn - totalOut;
-    return { batchId, transactions: sorted, totalIn, totalOut, remaining };
-  });
+  const batchTransactionsList: BatchTransactions[] = useMemo(() => {
+    return sortedBatches.map(batch => {
+      const transactions = txList
+        .filter(tx => tx.batchId === batch.batchNo)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      const totalIn = transactions.filter(t => t.type === 'stock_in').reduce((s, t) => s + t.quantity, 0);
+      const totalOut = transactions.filter(t => t.type === 'stock_out').reduce((s, t) => s + t.quantity, 0);
+      const remaining = totalIn - totalOut;
+      return { batch, transactions, totalIn, totalOut, remaining };
+    });
+  }, [sortedBatches, txList]);
 
   const toggleBatch = (batchId: string) => {
     setExpandedBatches(prev => ({ ...prev, [batchId]: !prev[batchId] }));
@@ -125,7 +146,7 @@ export const MaterialDetail: React.FC = () => {
           <BarChart3 className="w-3.5 h-3.5" />
           <span>库存与安全阈值对比</span>
         </div>
-        <div className="h-28">
+        <div className="h-32">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={stockData} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 179, 255, 0.1)" />
@@ -135,8 +156,8 @@ export const MaterialDetail: React.FC = () => {
                 contentStyle={{ backgroundColor: 'rgba(15, 31, 56, 0.95)', border: '1px solid rgba(0, 179, 255, 0.3)', borderRadius: '4px', fontSize: '12px' }}
               />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {stockData.map((_, index) => (
-                  <Cell key={index} fill={index === 0 ? getQualityColor(material.qualityStatus) : '#FFB020'} />
+                {stockData.map((entry, index) => (
+                  <Cell key={index} fill={entry.color} />
                 ))}
               </Bar>
             </BarChart>
@@ -220,63 +241,111 @@ export const MaterialDetail: React.FC = () => {
 
       <GlowCard color="blue" className="p-3 space-y-2">
         <div className="flex items-center gap-1 text-xs text-neon-blue font-semibold">
-          <ArrowUpDown className="w-3.5 h-3.5" />
-          <span>出入库流水</span>
+          <Package className="w-3.5 h-3.5" />
+          <span>批次列表</span>
         </div>
-        {txList.length === 0 ? (
-          <div className="text-xs text-white/40">暂无出入库记录</div>
+        {batchTransactionsList.length === 0 ? (
+          <div className="text-xs text-white/40">暂无批次信息</div>
         ) : (
           <>
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {batchEntries.map(({ batchId, transactions, totalIn: batchIn, totalOut: batchOut, remaining }) => {
-                const isExpanded = expandedBatches[batchId] !== false;
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {batchTransactionsList.map(({ batch, transactions, totalIn: batchIn, totalOut: batchOut, remaining }) => {
+                const isExpanded = expandedBatches[batch.id] !== false;
                 const firstStockInIdx = transactions.findIndex(t => t.type === 'stock_in');
+                const batchAvailable = batch.quantity - batch.lockedQuantity;
+                const batchSupplier = suppliers.find(s => s.id === batch.supplierId);
                 return (
-                  <div key={batchId} className="rounded border border-white/10 overflow-hidden">
+                  <div key={batch.id} className="rounded border border-white/10 overflow-hidden">
                     <button
-                      onClick={() => toggleBatch(batchId)}
+                      onClick={() => toggleBatch(batch.id)}
                       className="w-full flex items-center justify-between px-2 py-1.5 bg-white/5 hover:bg-white/10 transition-colors"
                     >
                       <div className="flex items-center gap-1.5 text-xs">
                         {isExpanded ? <ChevronDown className="w-3 h-3 text-neon-blue" /> : <ChevronRight className="w-3 h-3 text-neon-blue" />}
-                        <Package className="w-3 h-3 text-neon-yellow" />
-                        <span className="text-white/80 font-mono">{batchId}</span>
+                        <span className="text-neon-yellow font-mono">{batch.batchNo}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-[10px]">
-                        <span className="text-neon-green">+{batchIn}</span>
-                        <span className="text-red-400">-{batchOut}</span>
-                        <span className={remaining > 0 ? 'text-white/70' : 'text-red-400'}>余{remaining}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <StatusBadge status={batch.qualityStatus} text={getQualityLabel(batch.qualityStatus)} className="px-1.5 py-0.5 text-[10px] gap-1" />
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                            style={{
+                              color: getInspectionColor(batch.inspectionStatus),
+                              backgroundColor: `${getInspectionColor(batch.inspectionStatus)}20`,
+                              border: `1px solid ${getInspectionColor(batch.inspectionStatus)}50`,
+                            }}
+                          >
+                            {getInspectionLabel(batch.inspectionStatus)}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-white/70 font-mono">
+                          {batchAvailable}/{batch.quantity}
+                        </span>
                       </div>
                     </button>
                     {isExpanded && (
-                      <div className="px-2 py-1 space-y-1">
-                        {transactions.map((tx, idx) => {
-                          const isFirstStockIn = idx === firstStockInIdx;
-                          const label = getLifecycleLabel(tx, isFirstStockIn);
-                          const isStockIn = tx.type === 'stock_in';
-                          return (
-                            <div key={tx.id} className="flex items-start gap-1.5 text-xs">
-                              <div className="flex flex-col items-center mt-0.5">
-                                <div className={`w-2 h-2 rounded-full ${isStockIn ? 'bg-neon-green' : 'bg-red-400'}`} />
-                                {idx < transactions.length - 1 && <div className="w-px h-4 bg-white/10" />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between">
-                                  <span className={`font-medium ${isStockIn ? 'text-neon-green' : 'text-red-400'}`}>
-                                    {label} {isStockIn ? `+${tx.quantity}` : `-${tx.quantity}`}{tx.unit}
-                                  </span>
-                                  <span className="text-white/30 shrink-0 ml-1">{tx.timestamp.slice(5, 16)}</span>
-                                </div>
-                                <div className="text-white/50 truncate">{tx.reason}</div>
-                                <div className="text-white/30">{tx.operatorName}</div>
-                              </div>
+                      <div className="px-2 py-2 space-y-2">
+                        <div className="grid grid-cols-2 gap-1 text-[11px]">
+                          <div className="flex items-center gap-1 text-white/60">
+                            <Calendar className="w-3 h-3" />
+                            <span>到货日期:</span>
+                            <span className="text-white">{batch.arrivalDate}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-white/60">
+                            <Truck className="w-3 h-3" />
+                            <span>供应商:</span>
+                            <span className="text-white truncate">{batchSupplier?.name || '-'}</span>
+                          </div>
+                          <div className="text-white/60">
+                            <span>数量:</span>
+                            <span className="text-white font-mono ml-1">{batch.quantity}{material.unit}</span>
+                          </div>
+                          <div className="text-white/60">
+                            <span>锁定:</span>
+                            <span className="text-orange-400 font-mono ml-1">{batch.lockedQuantity}{material.unit}</span>
+                          </div>
+                        </div>
+
+                        <div className="border-t border-white/10 pt-2">
+                          <div className="text-[10px] text-white/50 mb-1">出入库记录</div>
+                          {transactions.length === 0 ? (
+                            <div className="text-[11px] text-white/30">暂无记录</div>
+                          ) : (
+                            <div className="space-y-1">
+                              {transactions.map((tx, idx) => {
+                                const isFirstStockIn = idx === firstStockInIdx;
+                                const label = getLifecycleLabel(tx, isFirstStockIn);
+                                const isStockIn = tx.type === 'stock_in';
+                                return (
+                                  <div key={tx.id} className="flex items-start gap-1.5 text-xs">
+                                    <div className="flex flex-col items-center mt-0.5">
+                                      <div className={`w-2 h-2 rounded-full ${isStockIn ? 'bg-neon-green' : 'bg-red-400'}`} />
+                                      {idx < transactions.length - 1 && <div className="w-px h-4 bg-white/10" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between">
+                                        <span className={`font-medium ${isStockIn ? 'text-neon-green' : 'text-red-400'}`}>
+                                          {label} {isStockIn ? `+${tx.quantity}` : `-${tx.quantity}`}{tx.unit}
+                                        </span>
+                                        <span className="text-white/30 shrink-0 ml-1">{tx.timestamp.slice(5, 16)}</span>
+                                      </div>
+                                      <div className="text-white/50 truncate">{tx.reason}</div>
+                                      <div className="text-white/30">{tx.operatorName}</div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                          );
-                        })}
-                        <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[10px]">
-                          <span className="text-white/50">剩余</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1.5 border-t border-white/10 text-[10px]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-neon-green">入 {batchIn}</span>
+                            <span className="text-red-400">出 {batchOut}</span>
+                          </div>
                           <span className={remaining > 0 ? 'text-neon-green font-mono' : 'text-red-400 font-mono'}>
-                            {remaining} {material.unit}
+                            余 {remaining} {material.unit}
                           </span>
                         </div>
                       </div>

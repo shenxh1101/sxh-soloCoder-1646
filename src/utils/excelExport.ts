@@ -72,14 +72,19 @@ export function exportMaterialReport(params: ExportParams): Blob {
   const ws2 = XLSX.utils.json_to_sheet(supplierData);
   XLSX.utils.book_append_sheet(wb, ws2, '供应商档案');
 
-  const inspectionData = filteredInspections.map(i => ({
-    '检测编号': i.id,
-    '物料编号': i.materialId,
-    '质检员ID': i.inspectorId,
-    '检测结果': i.result === 'pass' ? '合格' : '不合格',
-    '备注': i.remark,
-    '检测时间': i.timestamp,
-  }));
+  const inspectionData = filteredInspections.map(i => {
+    const mat = materials.find(m => m.id === i.materialId);
+    const batch = mat?.batches.find(b => b.id === i.batchId);
+    return {
+      '检测编号': i.id,
+      '物料编号': i.materialId,
+      '批次号': batch?.batchNo || i.batchId || '-',
+      '质检员ID': i.inspectorId,
+      '检测结果': i.result === 'pass' ? '合格' : '不合格',
+      '备注': i.remark,
+      '检测时间': i.timestamp,
+    };
+  });
 
   const ws3 = XLSX.utils.json_to_sheet(inspectionData);
   XLSX.utils.book_append_sheet(wb, ws3, '质检记录');
@@ -159,17 +164,44 @@ export function exportMaterialReport(params: ExportParams): Blob {
   };
 
   const filteredRectifications = rectifications.filter(r => isDateInRange(r.createdAt, startDate, endDate));
-  const rectificationData = filteredRectifications.map(r => ({
-    '整改编号': r.id,
-    '物料编号': r.materialId,
-    '描述': r.description,
-    '状态': rectificationStatusMap[r.status] || r.status,
-    '审批记录': r.approvals.map(a => `${a.role}:${a.userId} ${a.time} ${a.comment}`).join('; '),
-    '创建时间': r.createdAt,
-  }));
+  const rectificationData = filteredRectifications.map(r => {
+    const mat = materials.find(m => m.id === r.materialId);
+    const batch = mat?.batches.find(b => b.id === r.batchId);
+    return {
+      '整改编号': r.id,
+      '物料编号': r.materialId,
+      '批次号': batch?.batchNo || r.batchId || '-',
+      '描述': r.description,
+      '状态': rectificationStatusMap[r.status] || r.status,
+      '审批记录': r.approvals.map(a => `${a.role}:${a.userId} ${a.time} ${a.comment}`).join('; '),
+      '创建时间': r.createdAt,
+    };
+  });
 
   const ws7 = XLSX.utils.json_to_sheet(rectificationData);
   XLSX.utils.book_append_sheet(wb, ws7, '整改审批');
+
+  const batchDetailData = materials.flatMap(m =>
+    m.batches.map(b => {
+      const sup = suppliers.find(s => s.id === b.supplierId);
+      return {
+        '物料编号': m.id,
+        '物料名称': m.name,
+        '批次号': b.batchNo,
+        '到货日期': b.arrivalDate,
+        '总数量': `${b.quantity} ${m.unit}`,
+        '可用数量': `${b.quantity - b.lockedQuantity} ${m.unit}`,
+        '锁定数量': `${b.lockedQuantity} ${m.unit}`,
+        '质量状态': getQualityLabel(b.qualityStatus),
+        '检验状态': b.inspectionStatus === 'pending' ? '待检' : '已检验',
+        '供应商': sup?.name || '-',
+        '来源申请': b.purchaseRequestId || '-',
+      };
+    })
+  );
+
+  const ws8 = XLSX.utils.json_to_sheet(batchDetailData);
+  XLSX.utils.book_append_sheet(wb, ws8, '批次明细');
 
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   return new Blob([wbout], { type: 'application/octet-stream' });

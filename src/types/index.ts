@@ -9,6 +9,18 @@ export interface User {
 
 export type QualityStatus = 'green' | 'yellow' | 'red';
 
+export interface MaterialBatch {
+  id: string;
+  batchNo: string;
+  arrivalDate: string;
+  quantity: number;
+  lockedQuantity: number;
+  qualityStatus: QualityStatus;
+  supplierId: string;
+  inspectionStatus: 'pending' | 'inspected';
+  purchaseRequestId?: string;
+}
+
 export interface Material {
   id: string;
   name: string;
@@ -24,6 +36,7 @@ export interface Material {
   isLocked: boolean;
   unit: string;
   lockedStock: number;
+  batches: MaterialBatch[];
 }
 
 export interface Supplier {
@@ -47,6 +60,7 @@ export interface ConsumptionHourly {
 export interface Inspection {
   id: string;
   materialId: string;
+  batchId: string;
   inspectorId: string;
   result: 'pass' | 'fail';
   remark: string;
@@ -56,6 +70,7 @@ export interface Inspection {
 export interface Rectification {
   id: string;
   materialId: string;
+  batchId: string;
   description: string;
   status: 'pending_inspector' | 'pending_worker' | 'pending_manager' | 'completed' | 'rejected';
   approvals: { role: UserRole; userId: string; time: string; comment: string }[];

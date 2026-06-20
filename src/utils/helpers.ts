@@ -65,6 +65,22 @@ export function generateId(prefix = 'id'): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+export function generateBatchNo(category: string): string {
+  const d = new Date();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const datePart = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const seq = Math.floor(Math.random() * 900) + 100;
+  const prefixMap: Record<string, string> = {
+    '钢材': 'G',
+    '水泥': 'C',
+    '砂石': 'S',
+    '木材': 'W',
+    '砌体': 'B',
+  };
+  const prefix = prefixMap[category] || 'M';
+  return `${prefix}${datePart}${seq}`;
+}
+
 export function formatDateTime(date?: Date | string): string {
   const d = date ? new Date(date) : new Date();
   const pad = (n: number) => n.toString().padStart(2, '0');

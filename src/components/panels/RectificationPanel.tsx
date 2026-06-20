@@ -86,6 +86,7 @@ export const RectificationPanel: React.FC = () => {
       <div className="space-y-2 flex-1 overflow-y-auto">
         {rectifications.map(rect => {
           const material = materials.find(m => m.id === rect.materialId);
+          const batch = material?.batches.find(b => b.id === rect.batchId);
           const cfg = statusConfig[rect.status];
           const currentStep = getCurrentStep(rect.status);
           const isExpanded = expandedId === rect.id;
@@ -103,6 +104,9 @@ export const RectificationPanel: React.FC = () => {
                       <span className="text-xs font-semibold text-white truncate">
                         {material?.name || rect.materialId}
                       </span>
+                      {batch && (
+                        <span className="text-[10px] text-neon-yellow font-mono shrink-0">{batch.batchNo}</span>
+                      )}
                       <StatusBadge status={cfg.color} text={cfg.label} className="text-[9px] shrink-0" />
                     </div>
                     <p className="text-[11px] text-white/60 line-clamp-2">{rect.description}</p>
