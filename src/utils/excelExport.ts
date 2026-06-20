@@ -3,24 +3,33 @@ import type { Material, Supplier, Inspection, DailyReport } from '../types';
 import { getQualityLabel, getZoneLabel } from './helpers';
 
 export interface ExportParams {
-  date: string;
+  startDate: string;
+  endDate: string;
   materials: Material[];
   suppliers: Supplier[];
   inspections: Inspection[];
   dailyReports: DailyReport[];
 }
 
+function isDateInRange(dateStr: string, start: string, end: string): boolean {
+  const d = dateStr.substring(0, 10);
+  return d >= start && d <= end;
+}
+
 export function exportMaterialReport(params: ExportParams): Blob {
-  const { date, materials, suppliers, inspections, dailyReports } = params;
+  const { startDate, endDate, materials, suppliers, inspections, dailyReports } = params;
+
+  const filteredInspections = inspections.filter(i => isDateInRange(i.timestamp, startDate, endDate));
+  const filteredReports = dailyReports.filter(r => isDateInRange(r.date, startDate, endDate));
 
   const wb = XLSX.utils.book_new();
 
   const materialData = materials.map(m => {
     const supplier = suppliers.find(s => s.id === m.supplierId);
-    const passCount = inspections.filter(i => i.materialId === m.id && i.result === 'pass').length;
-    const totalCount = inspections.filter(i => i.materialId === m.id).length;
+    const passCount = filteredInspections.filter(i => i.materialId === m.id && i.result === 'pass').length;
+    const totalCount = filteredInspections.filter(i => i.materialId === m.id).length;
     const passRate = totalCount > 0 ? `${((passCount / totalCount) * 100).toFixed(1)}%` : '-';
-    const dailyConsumption = dailyReports.flatMap(r =>
+    const dailyConsumption = filteredReports.flatMap(r =>
       r.zoneConsumptions.flatMap(z =>
         z.materials.filter(mat => mat.materialId === m.id).map(mat => mat.amount)
       )
@@ -58,7 +67,7 @@ export function exportMaterialReport(params: ExportParams): Blob {
   const ws2 = XLSX.utils.json_to_sheet(supplierData);
   XLSX.utils.book_append_sheet(wb, ws2, '供应商档案');
 
-  const inspectionData = inspections.map(i => ({
+  const inspectionData = filteredInspections.map(i => ({
     '检测编号': i.id,
     '物料编号': i.materialId,
     '质检员ID': i.inspectorId,
@@ -70,7 +79,7 @@ export function exportMaterialReport(params: ExportParams): Blob {
   const ws3 = XLSX.utils.json_to_sheet(inspectionData);
   XLSX.utils.book_append_sheet(wb, ws3, '质检记录');
 
-  const reportData = dailyReports.flatMap(r =>
+  const reportData = filteredReports.flatMap(r =>
     r.zoneConsumptions.flatMap(z =>
       z.materials.map(m => ({
         '日报编号': r.id,

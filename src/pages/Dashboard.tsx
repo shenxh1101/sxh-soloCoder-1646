@@ -29,6 +29,7 @@ const Dashboard: React.FC = () => {
   const showNotification = useAppStore(s => s.showNotification);
   const setNotification = useAppStore(s => s.setNotification);
   const generateDailyReport = useAppStore(s => s.generateDailyReport);
+  const checkAndGenerateAutoPurchase = useAppStore(s => s.checkAndGenerateAutoPurchase);
 
   const [notifCountdown, setNotifCountdown] = useState<number | null>(null);
 
@@ -37,6 +38,13 @@ const Dashboard: React.FC = () => {
       navigate('/login');
     }
   }, [isLoggedIn, navigate]);
+
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      const timer = setTimeout(() => checkAndGenerateAutoPurchase(), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoggedIn, currentUser, checkAndGenerateAutoPurchase]);
 
   useEffect(() => {
     const reportInterval = setInterval(() => {

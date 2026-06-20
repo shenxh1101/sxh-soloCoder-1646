@@ -85,3 +85,17 @@ export function getFutureDemand(): { day: string; demand: number }[] {
   }
   return result;
 }
+
+export function getFutureDemandTotal(): number {
+  return getFutureDemand().reduce((sum, d) => sum + d.demand, 0);
+}
+
+export function getSuggestedPurchaseQty(currentStock: number, safetyThreshold: number, unit = ''): { qty: number; reason: string } {
+  const futureDemand = getFutureDemandTotal();
+  const shortage = Math.max(0, safetyThreshold - currentStock);
+  const qty = Math.ceil((shortage + futureDemand * 0.3) * 1.2);
+  const reason = shortage > 0
+    ? `库存缺口${shortage}${unit}，加7日需求缓冲约${Math.ceil(futureDemand * 0.3)}${unit}`
+    : `7日需求预测缓冲约${Math.ceil(futureDemand * 0.3)}${unit}`;
+  return { qty: Math.max(qty, 10), reason };
+}

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
-  FileText, Calendar, Download, TrendingUp, BarChart3, FileSpreadsheet
+  FileText, Calendar, Download, TrendingUp, BarChart3, FileSpreadsheet, AlertTriangle
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
@@ -15,12 +15,27 @@ export const ReportPanel: React.FC = () => {
   const dailyReports = useAppStore(s => s.dailyReports);
   const generateDailyReport = useAppStore(s => s.generateDailyReport);
   const exportExcelReport = useAppStore(s => s.exportExcelReport);
+  const setError = useAppStore(s => s.setError);
 
   const today = new Date().toISOString().split('T')[0];
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
 
   const demandData = useMemo(() => getFutureDemand(), []);
+
+  const dateError = useMemo(() => {
+    if (!startDate || !endDate) return '请选择完整的开始日期和结束日期';
+    if (startDate > endDate) return '开始日期不能晚于结束日期';
+    return '';
+  }, [startDate, endDate]);
+
+  const handleExport = () => {
+    if (dateError) {
+      setError(dateError);
+      return;
+    }
+    exportExcelReport(startDate, endDate);
+  };
 
   const inventorySummary = materials.map(m => ({
     name: m.name,
@@ -36,23 +51,35 @@ export const ReportPanel: React.FC = () => {
         <h3 className="text-sm font-bold text-neon-blue glow-text-blue">报表中心</h3>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 flex-1">
-          <Calendar className="w-3.5 h-3.5 text-white/50" />
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="flex-1 px-2 py-1 rounded-md bg-white/5 border border-white/10 text-[11px] text-white focus:outline-none focus:border-neon-blue/50"
-          />
-          <span className="text-white/40 text-xs">至</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="flex-1 px-2 py-1 rounded-md bg-white/5 border border-white/10 text-[11px] text-white focus:outline-none focus:border-neon-blue/50"
-          />
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 flex-1">
+            <Calendar className="w-3.5 h-3.5 text-white/50" />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className={`flex-1 px-2 py-1 rounded-md bg-white/5 border text-[11px] text-white focus:outline-none focus:border-neon-blue/50 ${
+                dateError ? 'border-neon-red/60' : 'border-white/10'
+              }`}
+            />
+            <span className="text-white/40 text-xs">至</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className={`flex-1 px-2 py-1 rounded-md bg-white/5 border text-[11px] text-white focus:outline-none focus:border-neon-blue/50 ${
+                dateError ? 'border-neon-red/60' : 'border-white/10'
+              }`}
+            />
+          </div>
         </div>
+        {dateError && (
+          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-neon-red/10 border border-neon-red/30 text-neon-red text-[10px]">
+            <AlertTriangle className="w-3 h-3" />
+            {dateError}
+          </div>
+        )}
       </div>
 
       <GlowCard className="p-3 space-y-2" color="green">
@@ -62,8 +89,13 @@ export const ReportPanel: React.FC = () => {
             物料库存汇总预览
           </div>
           <button
-            onClick={() => exportExcelReport(today)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-neon-green/20 border border-neon-green/50 text-neon-green text-[10px] font-medium hover:bg-neon-green/30 transition-colors"
+            onClick={handleExport}
+            disabled={!!dateError}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium transition-colors ${
+              dateError
+                ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                : 'bg-neon-green/20 border-neon-green/50 text-neon-green hover:bg-neon-green/30'
+            }`}
           >
             <Download className="w-3 h-3" />
             导出Excel

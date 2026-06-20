@@ -54,41 +54,94 @@ function SceneContent() {
       <Crane position={[0, 0, 4]} rotation={0} />
       <Crane position={[-8, 0, 4]} rotation={Math.PI / 4} />
 
-      {materials.map((m) => (
-        <group key={m.id}>
-          <MaterialStack
-            position={[m.position.x, m.position.y + 0.75, m.position.z]}
-            status={m.qualityStatus}
-            size={[2.5, 1.5, 2.5]}
-            isSelected={selectedMaterialId === m.id}
-            onClick={() => {
-              selectMaterial(m.id);
-              setActivePanel(null);
-            }}
-          />
-          <Html
-            position={[m.position.x, m.position.y + 2.8, m.position.z]}
-            center
-            style={{ pointerEvents: 'none' }}
-          >
-            <div
-              className="px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap"
-              style={{
-                background: 'rgba(10, 22, 40, 0.9)',
-                border: `1px solid ${
-                  m.qualityStatus === 'green' ? '#00C48C' :
-                  m.qualityStatus === 'yellow' ? '#FFB020' : '#FF4757'
-                }50`,
-                color: m.qualityStatus === 'green' ? '#00C48C' :
-                       m.qualityStatus === 'yellow' ? '#FFB020' : '#FF4757',
+      {materials.map((m) => {
+        const statusColor = m.qualityStatus === 'green' ? '#00C48C' :
+                           m.qualityStatus === 'yellow' ? '#FFB020' : '#FF4757';
+        const statusText = m.qualityStatus === 'green' ? '合格' :
+                          m.qualityStatus === 'yellow' ? '待检' : '不合格';
+        return (
+          <group key={m.id}>
+            <MaterialStack
+              position={[m.position.x, m.position.y + 0.75, m.position.z]}
+              status={m.qualityStatus}
+              size={[2.5, 1.5, 2.5]}
+              isSelected={selectedMaterialId === m.id}
+              onClick={() => {
+                selectMaterial(m.id);
+                setActivePanel(null);
               }}
+            />
+            <Html
+              position={[m.position.x, m.position.y + 3.5, m.position.z]}
+              center
+              style={{ pointerEvents: 'none' }}
             >
-              {m.name} · {m.stock}{m.unit}
-              {m.isLocked && ' 🔒'}
-            </div>
-          </Html>
-        </group>
-      ))}
+              <div
+                className="px-2.5 py-1.5 rounded-md"
+                style={{
+                  background: 'rgba(10, 22, 40, 0.92)',
+                  border: `1px solid ${statusColor}50`,
+                  boxShadow: `0 0 15px ${statusColor}25`,
+                  minWidth: '170px',
+                }}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-1">
+                    <div
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: statusColor, boxShadow: `0 0 6px ${statusColor}` }}
+                    />
+                    <span className="text-[11px] font-bold text-white tracking-wide">{m.name}</span>
+                  </div>
+                  {m.isLocked && (
+                    <span
+                      className="px-1 py-0.5 rounded text-[9px] font-bold"
+                      style={{ background: '#FF475725', color: '#FF4757', border: '1px solid #FF475750' }}
+                    >
+                      🔒 已锁定
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-0.5 text-[10px] font-mono">
+                  <div className="flex justify-between" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    <span>批次</span>
+                    <span style={{ color: '#00B3FF' }}>{m.batch}</span>
+                  </div>
+                  <div className="flex justify-between" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    <span>进场</span>
+                    <span style={{ color: 'rgba(255,255,255,0.8)' }}>{m.arrivalDate}</span>
+                  </div>
+                  <div className="flex justify-between items-center" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    <span>库存</span>
+                    <span className="flex items-center gap-1">
+                      <span style={{ color: m.stock < m.safetyThreshold ? '#FFB020' : '#00C48C', fontWeight: 'bold' }}>
+                        {m.stock}{m.unit}
+                      </span>
+                      <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '9px' }}>
+                        /{m.safetyThreshold}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-0.5" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    <span>质检</span>
+                    <span style={{ color: statusColor, fontWeight: 'bold' }}>
+                      ● {statusText}
+                    </span>
+                  </div>
+                </div>
+                {m.stock < m.safetyThreshold && (
+                  <div
+                    className="mt-1 px-1.5 py-0.5 rounded text-[9px] text-center font-medium"
+                    style={{ background: '#FFB02015', color: '#FFB020', border: '1px solid #FFB02030' }}
+                  >
+                    ⚠ 库存低于安全阈值
+                  </div>
+                )}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
 
       {activePaths.map((task) => (
         <CranePath
